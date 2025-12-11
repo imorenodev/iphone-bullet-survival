@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>NEON SURVIVOR</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #0a0a0f;
+            touch-action: none;
+        }
+        
+        #game-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    
+    <script>
+    // ============================================
+    // NEON SURVIVOR - A Bullet Hell Game
+    // Inspired by Brotato & Hotline Miami
+    // Optimized for iPhone Safari
+    // ============================================
+
+    const GAME_CONFIG = {
+        // Player stats (can be upgraded)
+        player: {
+            baseSpeed: 200,
+            baseHealth: 100,
+            baseDamage: 10,
+            baseFireRate: 300, // ms between shots
+            baseProjectileSpeed: 400,
+            basePiercing: 0,
+            baseProjectileCount: 1
+        },
+        // Enemy scaling
+        enemy: {
+            baseHealth: 20,
+            baseDamage: 10,
+            baseSpeed: 80,
+            healthScaling: 1.15,
+            countScaling: 1.2
+        },
+        // Wave settings
+        wave: {
+            enemiesBase: 5,
+            timeBetweenSpawns: 1500,
+            breakDuration: 8000
+        }
+    };
+
+    // ============================================
+    // BOOT SCENE - Load assets and initialize
+    // ============================================
+    class BootScene extends Phaser.Scene {
+        constructor() {
+            super({ key: 'BootScene' });
+        }
+
+        preload() {
+            // Create loading bar
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+            
+            const progressBar = this.add.graphics();
+            const progressBox = this.add.graphics();
+            progressBox.fillStyle(0x222222, 0.8);
+            progressBox.fillRect(width / 2 - 160, height / 2 - 25, 320, 50);
+            
+            const loadingText = this.add.text(width / 2, height / 2 - 50, 'INITIALIZING...', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '20px',
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+
+            this.load.on('progress', (value) => {
+                progressBar.clear();
+                progressBar.fillStyle(0x00ffff, 1);
+                progressBar.fillRect(width / 2 - 150, height / 2 - 15, 300 * value, 30);
+            });
+
+            this.load.on('complete', () => {
+                progressBar.destroy();
+                progressBox.destroy();
+                loadingText.destroy();
+            });
+
+            // Generate all game textures
+            this.createGameTextures();
+        }
+
+        createGameTextures() {
+            // Player texture - glowing triangle ship
+            const playerGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            playerGraphics.fillStyle(0x00ffff, 1);
+            playerGraphics.fillCircle(20, 20, 16);
+            playerGraphics.fillStyle(0x0088aa, 1);
+            playerGraphics.fillCircle(20, 20, 10);
+            playerGraphics.fillStyle(0xffffff, 1);
+            playerGraphics.fillCircle(20, 20, 4);
+            playerGraphics.generateTexture('player', 40, 40);
+
+            // Player glow
+            const glowGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            glowGraphics.fillStyle(0x00ffff, 0.3);
+            glowGraphics.fillCircle(30, 30, 28);
+            glowGraphics.fillStyle(0x00ffff, 0.2);
+            glowGraphics.fillCircle(30, 30, 35);
+            glowGraphics.generateTexture('playerGlow', 60, 60);
+
+            // Bullet texture - neon cyan
+            const bulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            bulletGraphics.fillStyle(0x00ffff, 1);
+            bulletGraphics.fillCircle(6, 6, 5);
+            bulletGraphics.fillStyle(0xffffff, 1);
+            bulletGraphics.fillCircle(6, 6, 2);
+            bulletGraphics.generateTexture('bullet', 12, 12);
+
+            // Enemy types
+            // Basic enemy - red square
+            const enemy1Graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            enemy1Graphics.fillStyle(0xff0044, 1);
+            enemy1Graphics.fillRect(4, 4, 24, 24);
+            enemy1Graphics.fillStyle(0xaa0022, 1);
+            enemy1Graphics.fillRect(8, 8, 16, 16);
+            enemy1Graphics.fillStyle(0xff4488, 1);
+            enemy1Graphics.fillRect(12, 12, 8, 8);
+            enemy1Graphics.generateTexture('enemy1', 32, 32);
+
+            // Fast enemy - orange diamond
+            const enemy2Graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            enemy2Graphics.fillStyle(0xff8800, 1);
+            enemy2Graphics.fillTriangle(16, 0, 32, 16, 16, 32);
+            enemy2Graphics.fillTriangle(16, 0, 0, 16, 16, 32);
+            enemy2Graphics.fillStyle(0xffaa44, 1);
+            enemy2Graphics.fillCircle(16, 16, 6);
+            enemy2Graphics.generateTexture('enemy2', 32, 32);
+
+            // Tank enemy - purple hexagon
+            const enemy3Graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            enemy3Graphics.fillStyle(0x8800ff, 1);
+            enemy3Graphics.fillCircle(20, 20, 18);
+            enemy3Graphics.fillStyle(0x5500aa, 1);
+            enemy3Graphics.fillCircle(20, 20, 12);
+            enemy3Graphics.fillStyle(0xaa44ff, 1);
+            enemy3Graphics.fillCircle(20, 20, 6);
+            enemy3Graphics.generateTexture('enemy3', 40, 40);
+
+            // Shooter enemy - green
+            const enemy4Graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            enemy4Graphics.fillStyle(0x00ff44, 1);
+            enemy4Graphics.fillTriangle(16, 0, 32, 32, 0, 32);
+            enemy4Graphics.fillStyle(0x00aa22, 1);
+            enemy4Graphics.fillCircle(16, 18, 8);
+            enemy4Graphics.generateTexture('enemy4', 32, 32);
+
+            // Enemy bullet
+            const enemyBulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            enemyBulletGraphics.fillStyle(0xff0044, 1);
+            enemyBulletGraphics.fillCircle(5, 5, 4);
+            enemyBulletGraphics.fillStyle(0xff8888, 1);
+            enemyBulletGraphics.fillCircle(5, 5, 2);
+            enemyBulletGraphics.generateTexture('enemyBullet', 10, 10);
+
+            // XP orb
+            const xpGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            xpGraphics.fillStyle(0xffff00, 0.8);
+            xpGraphics.fillCircle(8, 8, 6);
+            xpGraphics.fillStyle(0xffffff, 1);
+            xpGraphics.fillCircle(8, 8, 2);
+            xpGraphics.generateTexture('xp', 16, 16);
+
+            // Health pickup
+            const healthGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            healthGraphics.fillStyle(0xff4444, 1);
+            healthGraphics.fillRect(6, 2, 8, 16);
+            healthGraphics.fillRect(2, 6, 16, 8);
+            healthGraphics.generateTexture('health', 20, 20);
+
+            // Joystick base
+            const joystickBaseGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            joystickBaseGraphics.lineStyle(3, 0x00ffff, 0.5);
+            joystickBaseGraphics.strokeCircle(60, 60, 55);
+            joystickBaseGraphics.fillStyle(0x00ffff, 0.1);
+            joystickBaseGraphics.fillCircle(60, 60, 55);
+            joystickBaseGraphics.generateTexture('joystickBase', 120, 120);
+
+            // Joystick thumb
+            const joystickThumbGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            joystickThumbGraphics.fillStyle(0x00ffff, 0.8);
+            joystickThumbGraphics.fillCircle(25, 25, 22);
+            joystickThumbGraphics.fillStyle(0xffffff, 0.5);
+            joystickThumbGraphics.fillCircle(25, 25, 10);
+            joystickThumbGraphics.generateTexture('joystickThumb', 50, 50);
+
+            // Particle
+            const particleGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            particleGraphics.fillStyle(0xffffff, 1);
+            particleGraphics.fillCircle(4, 4, 3);
+            particleGraphics.generateTexture('particle', 8, 8);
+        }
+
+        create() {
+            this.scene.start('MenuScene');
+        }
+    }
+
+    // ============================================
+    // MENU SCENE
+    // ============================================
+    class MenuScene extends Phaser.Scene {
+        constructor() {
+            super({ key: 'MenuScene' });
+        }
+
+        create() {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+
+            // Animated background grid
+            this.createBackground();
+
+            // Title with glow effect
+            const title = this.add.text(width / 2, height * 0.25, 'NEON\nSURVIVOR', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: Math.min(width * 0.12, 64) + 'px',
+                fontWeight: '900',
+                fill: '#00ffff',
+                align: 'center',
+                stroke: '#004455',
+                strokeThickness: 4
+            }).setOrigin(0.5);
+
+            // Pulsing animation
+            this.tweens.add({
+                targets: title,
+                scaleX: 1.05,
+                scaleY: 1.05,
+                duration: 1000,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+
+            // Subtitle
+            this.add.text(width / 2, height * 0.45, 'BULLET HELL SURVIVAL', {
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: Math.min(width * 0.05, 24) + 'px',
+                fill: '#ff0088',
+                letterSpacing: 8
+            }).setOrigin(0.5);
+
+            // Play button
+            const playBtn = this.add.container(width / 2, height * 0.65);
+            
+            const btnBg = this.add.graphics();
+            btnBg.fillStyle(0x00ffff, 0.2);
+            btnBg.fillRoundedRect(-100, -30, 200, 60, 10);
+            btnBg.lineStyle(2, 0x00ffff, 1);
+            btnBg.strokeRoundedRect(-100, -30, 200, 60, 10);
+            
+            const btnText = this.add.text(0, 0, 'TAP TO PLAY', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '20px',
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            
+            playBtn.add([btnBg, btnText]);
+            playBtn.setSize(200, 60);
+            playBtn.setInteractive();
+
+            // Button animations
+            this.tweens.add({
+                targets: playBtn,
+                y: height * 0.65 + 5,
+                duration: 800,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+
+            playBtn.on('pointerdown', () => {
+                this.cameras.main.flash(500, 0, 255, 255);
+                this.time.delayedCall(300, () => {
+                    this.scene.start('GameScene');
+                });
+            });
+
+            // Instructions
+            this.add.text(width / 2, height * 0.85, 'LEFT STICK: MOVE\nRIGHT SIDE: AIM & SHOOT', {
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: Math.min(width * 0.04, 18) + 'px',
+                fill: '#666688',
+                align: 'center',
+                lineSpacing: 8
+            }).setOrigin(0.5);
+
+            // Version
+            this.add.text(10, height - 20, 'v1.0', {
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '12px',
+                fill: '#333344'
+            });
+        }
+
+        createBackground() {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+            
+            // Dark gradient background
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x0a0a1a, 0x0a0a1a, 0x1a0a2a, 0x1a0a2a, 1);
+            bg.fillRect(0, 0, width, height);
+
+            // Animated grid lines
+            const gridGraphics = this.add.graphics();
+            gridGraphics.lineStyle(1, 0x00ffff, 0.1);
+            
+            const gridSize = 40;
+            for (let x = 0; x < width; x += gridSize) {
+                gridGraphics.lineBetween(x, 0, x, height);
+            }
+            for (let y = 0; y < height; y += gridSize) {
+                gridGraphics.lineBetween(0, y, width, y);
+            }
+        }
+    }
+
+    // ============================================
+    // MAIN GAME SCENE
+    // ============================================
+    class GameScene extends Phaser.Scene {
+        constructor() {
+            super({ key: 'GameScene' });
+        }
+
+        init() {
+            // Player stats (modified by upgrades)
+            this.playerStats = {
+                speed: GAME_CONFIG.player.baseSpeed,
+                maxHealth: GAME_CONFIG.player.baseHealth,
+                health: GAME_CONFIG.player.baseHealth,
+                damage: GAME_CONFIG.player.baseDamage,
+                fireRate: GAME_CONFIG.player.baseFireRate,
+                projectileSpeed: GAME_CONFIG.player.baseProjectileSpeed,
+                piercing: GAME_CONFIG.player.basePiercing,
+                projectileCount: GAME_CONFIG.player.baseProjectileCount,
+                magnetRange: 80,
+                xpMultiplier: 1
+            };
+
+            // Game state
+            this.wave = 1;
+            this.xp = 0;
+            this.xpToLevel = 50;
+            this.level = 1;
+            this.kills = 0;
+            this.enemiesRemaining = 0;
+            this.waveActive = false;
+            this.lastFireTime = 0;
+            this.aimAngle = 0;
+            this.isShooting = false;
+        }
+
+        create() {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+
+            // Set world bounds larger than screen for scrolling
+            const worldSize = 1600;
+            this.physics.world.setBounds(-worldSize/2, -worldSize/2, worldSize, worldSize);
+            
+            // Create background
+            this.createBackground(worldSize);
+
+            // Create groups
+            this.bullets = this.physics.add.group({ maxSize: 200 });
+            this.enemyBullets = this.physics.add.group({ maxSize: 100 });
+            this.enemies = this.physics.add.group();
+            this.xpOrbs = this.physics.add.group();
+            this.healthPickups = this.physics.add.group();
+
+            // Create player
+            this.createPlayer();
+
+            // Setup camera
+            this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+            this.cameras.main.setZoom(1);
+
+            // Create UI
+            this.createUI();
+
+            // Create touch controls
+            this.createTouchControls();
+
+            // Setup collisions
+            this.setupCollisions();
+
+            // Create particle emitter
+            this.createParticles();
+
+            // Start first wave after delay
+            this.time.delayedCall(1500, () => this.startWave());
+
+            // Background music beat effect
+            this.time.addEvent({
+                delay: 500,
+                callback: this.pulseBackground,
+                callbackScope: this,
+                loop: true
+            });
+        }
+
+        createBackground(worldSize) {
+            // Main background
+            const bg = this.add.graphics();
+            bg.fillStyle(0x0a0a15, 1);
+            bg.fillRect(-worldSize/2, -worldSize/2, worldSize, worldSize);
+
+            // Grid
+            const grid = this.add.graphics();
+            grid.lineStyle(1, 0x00ffff, 0.08);
+            
+            const gridSize = 50;
+            for (let x = -worldSize/2; x < worldSize/2; x += gridSize) {
+                grid.lineBetween(x, -worldSize/2, x, worldSize/2);
+            }
+            for (let y = -worldSize/2; y < worldSize/2; y += gridSize) {
+                grid.lineBetween(-worldSize/2, y, worldSize/2, y);
+            }
+
+            // Glow spots
+            for (let i = 0; i < 20; i++) {
+                const glow = this.add.graphics();
+                const x = Phaser.Math.Between(-worldSize/2, worldSize/2);
+                const y = Phaser.Math.Between(-worldSize/2, worldSize/2);
+                const color = Phaser.Math.RND.pick([0x00ffff, 0xff0088, 0x8800ff]);
+                glow.fillStyle(color, 0.05);
+                glow.fillCircle(x, y, Phaser.Math.Between(50, 150));
+            }
+
+            this.bgPulse = this.add.graphics();
+            this.bgPulse.setDepth(-1);
+        }
+
+        pulseBackground() {
+            if (!this.player || !this.player.active) return;
+            
+            this.bgPulse.clear();
+            this.bgPulse.fillStyle(0x00ffff, 0.02);
+            this.bgPulse.fillCircle(this.player.x, this.player.y, 300);
+        }
+
+        createPlayer() {
+            this.player = this.physics.add.sprite(0, 0, 'player');
+            this.player.setCollideWorldBounds(true);
+            this.player.setDepth(10);
+            this.player.setDrag(800);
+            
+            // Add glow effect
+            this.playerGlow = this.add.sprite(0, 0, 'playerGlow');
+            this.playerGlow.setDepth(9);
+            this.playerGlow.setAlpha(0.6);
+            
+            // Pulsing glow
+            this.tweens.add({
+                targets: this.playerGlow,
+                scaleX: 1.2,
+                scaleY: 1.2,
+                alpha: 0.3,
+                duration: 500,
+                yoyo: true,
+                repeat: -1
+            });
+        }
+
+        createUI() {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+
+            // UI container (fixed to camera)
+            this.uiContainer = this.add.container(0, 0);
+            this.uiContainer.setScrollFactor(0);
+            this.uiContainer.setDepth(100);
+
+            // Health bar background
+            const healthBg = this.add.graphics();
+            healthBg.fillStyle(0x220000, 0.8);
+            healthBg.fillRoundedRect(10, 10, 150, 20, 5);
+            this.uiContainer.add(healthBg);
+
+            // Health bar
+            this.healthBar = this.add.graphics();
+            this.uiContainer.add(this.healthBar);
+            this.updateHealthBar();
+
+            // Health text
+            this.healthText = this.add.text(85, 20, '', {
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '14px',
+                fill: '#ffffff'
+            }).setOrigin(0.5);
+            this.uiContainer.add(this.healthText);
+
+            // XP bar background
+            const xpBg = this.add.graphics();
+            xpBg.fillStyle(0x222200, 0.8);
+            xpBg.fillRoundedRect(10, 35, 150, 12, 3);
+            this.uiContainer.add(xpBg);
+
+            // XP bar
+            this.xpBar = this.add.graphics();
+            this.uiContainer.add(this.xpBar);
+            this.updateXPBar();
+
+            // Level text
+            this.levelText = this.add.text(165, 41, 'LV 1', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '12px',
+                fill: '#ffff00'
+            }).setOrigin(0, 0.5);
+            this.uiContainer.add(this.levelText);
+
+            // Wave text
+            this.waveText = this.add.text(width / 2, 15, 'WAVE 1', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '18px',
+                fill: '#00ffff',
+                stroke: '#003333',
+                strokeThickness: 2
+            }).setOrigin(0.5, 0);
+            this.uiContainer.add(this.waveText);
+
+            // Enemies remaining
+            this.enemyCountText = this.add.text(width / 2, 38, '', {
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '14px',
+                fill: '#ff4444'
+            }).setOrigin(0.5, 0);
+            this.uiContainer.add(this.enemyCountText);
+
+            // Kill counter
+            this.killText = this.add.text(width - 10, 15, 'KILLS: 0', {
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '16px',
+                fill: '#ff0088'
+            }).setOrigin(1, 0);
+            this.uiContainer.add(this.killText);
+        }
+
+        updateHealthBar() {
+            this.healthBar.clear();
+            const healthPercent = this.playerStats.health / this.playerStats.maxHealth;
+            const color = healthPercent > 0.5 ? 0x00ff44 : healthPercent > 0.25 ? 0xffaa00 : 0xff0044;
+            this.healthBar.fillStyle(color, 1);
+            this.healthBar.fillRoundedRect(12, 12, 146 * healthPercent, 16, 4);
+            
+            if (this.healthText) {
+                this.healthText.setText(`${Math.ceil(this.playerStats.health)}/${this.playerStats.maxHealth}`);
+            }
+        }
+
+        updateXPBar() {
+            this.xpBar.clear();
+            const xpPercent = Math.min(this.xp / this.xpToLevel, 1);
+            this.xpBar.fillStyle(0xffff00, 1);
+            this.xpBar.fillRoundedRect(12, 37, 146 * xpPercent, 8, 2);
+        }
+
+        createTouchControls() {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+
+            // Movement joystick (left side)
+            this.moveJoystick = {
+                base: this.add.sprite(90, height - 120, 'joystickBase').setScrollFactor(0).setDepth(99).setAlpha(0.6),
+                thumb: this.add.sprite(90, height - 120, 'joystickThumb').setScrollFactor(0).setDepth(100),
+                vector: new Phaser.Math.Vector2(0, 0),
+                isActive: false,
+                pointerId: null
+            };
+
+            // Aim/shoot zone indicator (right side)
+            this.aimZone = this.add.graphics();
+            this.aimZone.setScrollFactor(0);
+            this.aimZone.setDepth(99);
+            this.aimZone.lineStyle(2, 0xff0088, 0.3);
+            this.aimZone.strokeCircle(width - 90, height - 120, 60);
+            
+            this.aimIndicator = this.add.graphics();
+            this.aimIndicator.setScrollFactor(0);
+            this.aimIndicator.setDepth(100);
+
+            // Touch input handling
+            this.input.addPointer(2); // Support multi-touch
+
+            this.input.on('pointerdown', (pointer) => {
+                const isLeftSide = pointer.x < width / 2;
+                
+                if (isLeftSide && !this.moveJoystick.isActive) {
+                    // Movement joystick
+                    this.moveJoystick.isActive = true;
+                    this.moveJoystick.pointerId = pointer.id;
+                    this.moveJoystick.base.setPosition(pointer.x, pointer.y);
+                    this.moveJoystick.thumb.setPosition(pointer.x, pointer.y);
+                    this.moveJoystick.base.setAlpha(0.8);
+                } else if (!isLeftSide) {
+                    // Aim and shoot
+                    this.isShooting = true;
+                    this.updateAim(pointer.x, pointer.y);
+                }
+            });
+
+            this.input.on('pointermove', (pointer) => {
+                // Movement joystick
+                if (this.moveJoystick.isActive && pointer.id === this.moveJoystick.pointerId) {
+                    const maxDistance = 50;
+                    const dx = pointer.x - this.moveJoystick.base.x;
+                    const dy = pointer.y - this.moveJoystick.base.y;
+                    const distance = Math.min(Math.sqrt(dx * dx + dy * dy), maxDistance);
+                    const angle = Math.atan2(dy, dx);
+                    
+                    this.moveJoystick.thumb.setPosition(
+                        this.moveJoystick.base.x + Math.cos(angle) * distance,
+                        this.moveJoystick.base.y + Math.sin(angle) * distance
+                    );
+                    
+                    this.moveJoystick.vector.set(
+                        (distance / maxDistance) * Math.cos(angle),
+                        (distance / maxDistance) * Math.sin(angle)
+                    );
+                }
+                
+                // Aim update
+                if (pointer.x >= width / 2 && this.isShooting) {
+                    this.updateAim(pointer.x, pointer.y);
+                }
+            });
+
+            this.input.on('pointerup', (pointer) => {
+                if (pointer.id === this.moveJoystick.pointerId) {
+                    this.moveJoystick.isActive = false;
+                    this.moveJoystick.pointerId = null;
+                    this.moveJoystick.vector.set(0, 0);
+                    this.moveJoystick.thumb.setPosition(this.moveJoystick.base.x, this.moveJoystick.base.y);
+                    this.moveJoystick.base.setAlpha(0.6);
+                }
+                
+                if (pointer.x >= width / 2) {
+                    this.isShooting = false;
+                    this.aimIndicator.clear();
+                }
+            });
+
+            // Keyboard support for testing
+            this.cursors = this.input.keyboard.createCursorKeys();
+            this.wasd = this.input.keyboard.addKeys('W,A,S,D');
+        }
+
+        updateAim(screenX, screenY) {
+            // Convert screen position to world position
+            const worldPoint = this.cameras.main.getWorldPoint(screenX, screenY);
+            
+            // Calculate angle from player to touch point
+            this.aimAngle = Phaser.Math.Angle.Between(
+                this.player.x, this.player.y,
+                worldPoint.x, worldPoint.y
+            );
+
+            // Update aim indicator
+            this.aimIndicator.clear();
+            this.aimIndicator.lineStyle(3, 0xff0088, 0.8);
+            
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+            const indicatorX = width - 90;
+            const indicatorY = height - 120;
+            const lineLength = 40;
+            
+            this.aimIndicator.lineBetween(
+                indicatorX,
+                indicatorY,
+                indicatorX + Math.cos(this.aimAngle) * lineLength,
+                indicatorY + Math.sin(this.aimAngle) * lineLength
+            );
+        }
+
+        setupCollisions() {
+            // Bullets hit enemies
+            this.physics.add.overlap(this.bullets, this.enemies, this.bulletHitEnemy, null, this);
+            
+            // Enemy bullets hit player
+            this.physics.add.overlap(this.enemyBullets, this.player, this.enemyBulletHitPlayer, null, this);
+            
+            // Enemies hit player
+            this.physics.add.overlap(this.player, this.enemies, this.enemyHitPlayer, null, this);
+            
+            // Player collects XP
+            this.physics.add.overlap(this.player, this.xpOrbs, this.collectXP, null, this);
+            
+            // Player collects health
+            this.physics.add.overlap(this.player, this.healthPickups, this.collectHealth, null, this);
+        }
+
+        createParticles() {
+            this.hitEmitter = this.add.particles(0, 0, 'particle', {
+                speed: { min: 100, max: 200 },
+                scale: { start: 1, end: 0 },
+                lifespan: 300,
+                blendMode: 'ADD',
+                emitting: false
+            });
+
+            this.deathEmitter = this.add.particles(0, 0, 'particle', {
+                speed: { min: 150, max: 300 },
+                scale: { start: 1.5, end: 0 },
+                lifespan: 500,
+                blendMode: 'ADD',
+                emitting: false
+            });
+        }
+
+        startWave() {
+            this.waveActive = true;
+            this.waveText.setText(`WAVE ${this.wave}`);
+            
+            // Flash wave start
+            this.cameras.main.flash(200, 0, 255, 255, false);
+
+            // Calculate enemies for this wave
+            const baseEnemies = GAME_CONFIG.wave.enemiesBase;
+            const totalEnemies = Math.floor(baseEnemies * Math.pow(GAME_CONFIG.enemy.countScaling, this.wave - 1));
+            this.enemiesRemaining = totalEnemies;
+            
+            // Spawn enemies over time
+            let spawned = 0;
+            this.spawnTimer = this.time.addEvent({
+                delay: GAME_CONFIG.wave.timeBetweenSpawns / Math.sqrt(this.wave),
+                callback: () => {
+                    if (spawned < totalEnemies) {
+                        this.spawnEnemy();
+                        spawned++;
+                    }
+                },
+                repeat: totalEnemies - 1
+            });
+        }
+
+        spawnEnemy() {
+            // Spawn from outside screen
+            const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+            const distance = 500;
+            const x = this.player.x + Math.cos(angle) * distance;
+            const y = this.player.y + Math.sin(angle) * distance;
+
+            // Choose enemy type based on wave
+            let enemyType, health, speed, damage, texture;
+            const roll = Math.random();
+            
+            if (this.wave >= 5 && roll < 0.15) {
+                // Shooter enemy
+                enemyType = 'shooter';
+                texture = 'enemy4';
+                health = 25 * Math.pow(GAME_CONFIG.enemy.healthScaling, this.wave - 1);
+                speed = GAME_CONFIG.enemy.baseSpeed * 0.7;
+                damage = GAME_CONFIG.enemy.baseDamage;
+            } else if (this.wave >= 3 && roll < 0.3) {
+                // Tank enemy
+                enemyType = 'tank';
+                texture = 'enemy3';
+                health = 60 * Math.pow(GAME_CONFIG.enemy.healthScaling, this.wave - 1);
+                speed = GAME_CONFIG.enemy.baseSpeed * 0.5;
+                damage = GAME_CONFIG.enemy.baseDamage * 2;
+            } else if (this.wave >= 2 && roll < 0.5) {
+                // Fast enemy
+                enemyType = 'fast';
+                texture = 'enemy2';
+                health = 15 * Math.pow(GAME_CONFIG.enemy.healthScaling, this.wave - 1);
+                speed = GAME_CONFIG.enemy.baseSpeed * 1.8;
+                damage = GAME_CONFIG.enemy.baseDamage * 0.7;
+            } else {
+                // Basic enemy
+                enemyType = 'basic';
+                texture = 'enemy1';
+                health = GAME_CONFIG.enemy.baseHealth * Math.pow(GAME_CONFIG.enemy.healthScaling, this.wave - 1);
+                speed = GAME_CONFIG.enemy.baseSpeed;
+                damage = GAME_CONFIG.enemy.baseDamage;
+            }
+
+            const enemy = this.enemies.create(x, y, texture);
+            enemy.enemyType = enemyType;
+            enemy.health = health;
+            enemy.maxHealth = health;
+            enemy.speed = speed;
+            enemy.damage = damage;
+            enemy.lastShot = 0;
+            enemy.setDepth(5);
+
+            // Add slight random variation
+            enemy.speed *= Phaser.Math.FloatBetween(0.9, 1.1);
+        }
+
+        shootBullet() {
+            const now = this.time.now;
+            if (now - this.lastFireTime < this.playerStats.fireRate) return;
+            this.lastFireTime = now;
+
+            const count = this.playerStats.projectileCount;
+            const spreadAngle = count > 1 ? Math.PI / 8 : 0;
+            const startAngle = this.aimAngle - (spreadAngle * (count - 1) / 2);
+
+            for (let i = 0; i < count; i++) {
+                const angle = startAngle + (spreadAngle * i);
+                const bullet = this.bullets.get(this.player.x, this.player.y, 'bullet');
+                
+                if (bullet) {
+                    bullet.setActive(true);
+                    bullet.setVisible(true);
+                    bullet.damage = this.playerStats.damage;
+                    bullet.piercing = this.playerStats.piercing;
+                    bullet.pierceCount = 0;
+                    
+                    const velocity = new Phaser.Math.Vector2(
+                        Math.cos(angle) * this.playerStats.projectileSpeed,
+                        Math.sin(angle) * this.playerStats.projectileSpeed
+                    );
+                    bullet.body.setVelocity(velocity.x, velocity.y);
+                    bullet.setRotation(angle);
+
+                    // Destroy bullet after traveling far
+                    this.time.delayedCall(2000, () => {
+                        if (bullet.active) {
+                            bullet.setActive(false);
+                            bullet.setVisible(false);
+                        }
+                    });
+                }
+            }
+        }
+
+        enemyShoot(enemy) {
+            const bullet = this.enemyBullets.get(enemy.x, enemy.y, 'enemyBullet');
+            if (bullet) {
+                bullet.setActive(true);
+                bullet.setVisible(true);
+                bullet.damage = enemy.damage * 0.5;
+                
+                const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                const speed = 200;
+                bullet.body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                
+                this.time.delayedCall(3000, () => {
+                    if (bullet.active) {
+                        bullet.setActive(false);
+                        bullet.setVisible(false);
+                    }
+                });
+            }
+        }
+
+        bulletHitEnemy(bullet, enemy) {
+            // Damage enemy
+            enemy.health -= bullet.damage;
+            
+            // Particle effect
+            this.hitEmitter.setPosition(bullet.x, bullet.y);
+            this.hitEmitter.setParticleTint(0x00ffff);
+            this.hitEmitter.explode(5);
+
+            // Flash enemy
+            enemy.setTint(0xffffff);
+            this.time.delayedCall(50, () => {
+                if (enemy.active) enemy.clearTint();
+            });
+
+            // Handle piercing
+            bullet.pierceCount++;
+            if (bullet.pierceCount > bullet.piercing) {
+                bullet.setActive(false);
+                bullet.setVisible(false);
+            }
+
+            // Check if enemy died
+            if (enemy.health <= 0) {
+                this.killEnemy(enemy);
+            }
+        }
+
+        killEnemy(enemy) {
+            // Death particles
+            this.deathEmitter.setPosition(enemy.x, enemy.y);
+            const tint = enemy.enemyType === 'basic' ? 0xff0044 : 
+                         enemy.enemyType === 'fast' ? 0xff8800 :
+                         enemy.enemyType === 'tank' ? 0x8800ff : 0x00ff44;
+            this.deathEmitter.setParticleTint(tint);
+            this.deathEmitter.explode(15);
+
+            // Drop XP
+            const xpCount = enemy.enemyType === 'tank' ? 3 : enemy.enemyType === 'shooter' ? 2 : 1;
+            for (let i = 0; i < xpCount; i++) {
+                const xp = this.xpOrbs.create(
+                    enemy.x + Phaser.Math.Between(-20, 20),
+                    enemy.y + Phaser.Math.Between(-20, 20),
+                    'xp'
+                );
+                xp.value = Math.floor(10 * this.playerStats.xpMultiplier);
+            }
+
+            // Chance to drop health
+            if (Math.random() < 0.1) {
+                this.healthPickups.create(enemy.x, enemy.y, 'health');
+            }
+
+            // Update counters
+            this.kills++;
+            this.killText.setText(`KILLS: ${this.kills}`);
+            this.enemiesRemaining--;
+
+            // Destroy enemy
+            enemy.destroy();
+
+            // Check wave completion
+            if (this.enemiesRemaining <= 0 && this.waveActive) {
+                this.completeWave();
+            }
+        }
+
+        enemyBulletHitPlayer(player, bullet) {
+            this.damagePlayer(bullet.damage);
+            bullet.setActive(false);
+            bullet.setVisible(false);
+        }
+
+        enemyHitPlayer(player, enemy) {
+            // Contact damage with cooldown
+            if (!enemy.lastContactDamage || this.time.now - enemy.lastContactDamage > 500) {
+                this.damagePlayer(enemy.damage);
+                enemy.lastContactDamage = this.time.now;
+                
+                // Knockback
+                const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, player.x, player.y);
+                player.body.setVelocity(
+                    Math.cos(angle) * 300,
+                    Math.sin(angle) * 300
+                );
+            }
+        }
+
+        damagePlayer(damage) {
+            this.playerStats.health -= damage;
+            this.updateHealthBar();
+            
+            // Screen shake and flash
+            this.cameras.main.shake(100, 0.01);
+            this.cameras.main.flash(100, 255, 0, 0, false);
+            
+            // Player flash
+            this.player.setTint(0xff0000);
+            this.time.delayedCall(100, () => {
+                if (this.player.active) this.player.clearTint();
+            });
+
+            if (this.playerStats.health <= 0) {
+                this.gameOver();
+            }
+        }
+
+        collectXP(player, xp) {
+            this.xp += xp.value;
+            xp.destroy();
+            
+            // Check level up
+            while (this.xp >= this.xpToLevel) {
+                this.xp -= this.xpToLevel;
+                this.level++;
+                this.xpToLevel = Math.floor(50 * Math.pow(1.2, this.level - 1));
+                this.levelUp();
+            }
+            
+            this.updateXPBar();
+            this.levelText.setText(`LV ${this.level}`);
+        }
+
+        collectHealth(player, health) {
+            this.playerStats.health = Math.min(
+                this.playerStats.health + 20,
+                this.playerStats.maxHealth
+            );
+            this.updateHealthBar();
+            health.destroy();
+            
+            // Green flash
+            this.cameras.main.flash(100, 0, 255, 0, false);
+        }
+
+        levelUp() {
+            // Flash effect
+            this.cameras.main.flash(300, 255, 255, 0, false);
+            
+            // Show level up text
+            const text = this.add.text(this.player.x, this.player.y - 50, 'LEVEL UP!', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '24px',
+                fill: '#ffff00',
+                stroke: '#000000',
+                strokeThickness: 3
+            }).setOrigin(0.5).setDepth(50);
+            
+            this.tweens.add({
+                targets: text,
+                y: text.y - 50,
+                alpha: 0,
+                duration: 1000,
+                onComplete: () => text.destroy()
+            });
+
+            // Random stat boost
+            const upgrades = [
+                () => { this.playerStats.damage += 3; },
+                () => { this.playerStats.speed += 15; },
+                () => { this.playerStats.fireRate = Math.max(100, this.playerStats.fireRate - 20); },
+                () => { this.playerStats.maxHealth += 10; this.playerStats.health += 10; this.updateHealthBar(); },
+                () => { this.playerStats.magnetRange += 20; }
+            ];
+            
+            Phaser.Math.RND.pick(upgrades)();
+        }
+
+        completeWave() {
+            this.waveActive = false;
+            
+            // Show wave complete
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+            
+            const completeText = this.add.text(width / 2, height / 2, `WAVE ${this.wave} COMPLETE!`, {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '28px',
+                fill: '#00ffff',
+                stroke: '#003333',
+                strokeThickness: 3
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+
+            // Flash
+            this.cameras.main.flash(500, 0, 255, 255, false);
+
+            this.tweens.add({
+                targets: completeText,
+                alpha: 0,
+                y: height / 2 - 30,
+                duration: 2000,
+                onComplete: () => completeText.destroy()
+            });
+
+            // Start upgrade selection
+            this.time.delayedCall(1500, () => this.showUpgradeSelection());
+        }
+
+        showUpgradeSelection() {
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+
+            // Darken background
+            const overlay = this.add.graphics();
+            overlay.fillStyle(0x000000, 0.8);
+            overlay.fillRect(0, 0, width, height);
+            overlay.setScrollFactor(0);
+            overlay.setDepth(90);
+
+            // Title
+            const title = this.add.text(width / 2, 60, 'CHOOSE UPGRADE', {
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '24px',
+                fill: '#00ffff'
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(91);
+
+            // Generate 3 random upgrades
+            const allUpgrades = [
+                { name: 'DAMAGE +', desc: '+5 Damage', apply: () => { this.playerStats.damage += 5; } },
+                { name: 'SPEED +', desc: '+25 Speed', apply: () => { this.playerStats.speed += 25; } },
+                { name: 'FIRE RATE +', desc: 'Shoot faster', apply: () => { this.playerStats.fireRate = Math.max(80, this.playerStats.fireRate - 30); } },
+                { name: 'HEALTH +', desc: '+25 Max HP', apply: () => { this.playerStats.maxHealth += 25; this.playerStats.health += 25; this.updateHealthBar(); } },
+                { name: 'HEAL', desc: 'Restore 50 HP', apply: () => { this.playerStats.health = Math.min(this.playerStats.health + 50, this.playerStats.maxHealth); this.updateHealthBar(); } },
+                { name: 'PIERCING +', desc: '+1 Pierce', apply: () => { this.playerStats.piercing += 1; } },
+                { name: 'MULTISHOT', desc: '+1 Projectile', apply: () => { this.playerStats.projectileCount += 1; } },
+                { name: 'XP BOOST', desc: '+20% XP', apply: () => { this.playerStats.xpMultiplier += 0.2; } },
+                { name: 'MAGNET +', desc: '+40 Pickup Range', apply: () => { this.playerStats.magnetRange += 40; } },
+                { name: 'BULLET SPEED', desc: '+100 Proj Speed', apply: () => { this.playerStats.projectileSpeed += 100; } }
+            ];
+
+            Phaser.Utils.Array.Shuffle(allUpgrades);
+            const choices = allUpgrades.slice(0, 3);
+
+            const buttons = [];
+            const cardWidth = Math.min(width * 0.28, 110);
+            const cardHeight = 140;
+            const startX = width / 2 - cardWidth - 20;
+
+            choices.forEach((upgrade, i) => {
+                const x = startX + i * (cardWidth + 20);
+                const y = height / 2;
+
+                const container = this.add.container(x, y);
+                container.setScrollFactor(0);
+                container.setDepth(92);
+
+                // Card background
+                const bg = this.add.graphics();
+                bg.fillStyle(0x001122, 1);
+                bg.fillRoundedRect(-cardWidth/2, -cardHeight/2, cardWidth, cardHeight, 10);
+                bg.lineStyle(2, 0x00ffff, 1);
+                bg.strokeRoundedRect(-cardWidth/2, -cardHeight/2, cardWidth, cardHeight, 10);
+                container.add(bg);
+
+                // Upgrade name
+                const nameText = this.add.text(0, -40, upgrade.name, {
+                    fontFamily: 'Orbitron, monospace',
+                    fontSize: '14px',
+                    fill: '#00ffff',
+                    align: 'center',
+                    wordWrap: { width: cardWidth - 20 }
+                }).setOrigin(0.5);
+                container.add(nameText);
+
+                // Description
+                const descText = this.add.text(0, 10, upgrade.desc, {
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontSize: '12px',
+                    fill: '#aaaacc',
+                    align: 'center',
+                    wordWrap: { width: cardWidth - 20 }
+                }).setOrigin(0.5);
+                container.add(descText);
+
+                // Make interactive
+                container.setSize(cardWidth, cardHeight);
+                container.setInteractive();
+
+                container.on('pointerover', () => {
+                    bg.clear();
+                    bg.fillStyle(0x002244, 1);
+                    bg.fillRoundedRect(-cardWidth/2, -cardHeight/2, cardWidth, cardHeight, 10);
+                    bg.lineStyle(3, 0x00ffff, 1);
+                    bg.strokeRoundedRect(-cardWidth/2, -cardHeight/2, cardWidth, cardHeight, 10);
+                });
+
+                container.on('pointerout', () => {
+                    bg.clear();
+                    bg.fillStyle(0x001122, 1);
+                    bg.fillRoundedRect(-cardWidth/2, -cardHeight/2, cardWidth, cardHeight, 10);
+                    bg.lineStyle(2, 0x00ffff, 1);
+                    bg.strokeRoundedRect(-cardWidth/2, -cardHeight/2, cardWidth, cardHeight, 10);
+                });
+
+                container.on('pointerdown', () => {
+                    upgrade.apply();
+                    
+                    // Clean up
+                    overlay.destroy();
+                    title.destroy();
+                    buttons.forEach(b => b.destroy());
+                    
+                    // Next wave
+                    this.wave++;
+                    this.time.delayedCall(500, () => this.startWave());
+                });
+
+                buttons.push(container);
+            });
+        }
+
+        gameOver() {
+            // Stop everything
+            this.physics.pause();
+            if (this.spawnTimer) this.spawnTimer.destroy();
+
+            const width = this.cameras.main.width;
+            const height = this.cameras.main.height;
+
+            // Death effect
+            this.cameras.main.shake(500, 0.05);
+            this.cameras.main.flash(1000, 255, 0, 0, false);
+
+            // Death particles at player
+            this.deathEmitter.setPosition(this.player.x, this.player.y);
+            this.deathEmitter.setParticleTint(0x00ffff);
+            this.deathEmitter.explode(30);
+
+            this.player.setVisible(false);
+            this.playerGlow.setVisible(false);
+
+            // Game over screen
+            this.time.delayedCall(1000, () => {
+                const overlay = this.add.graphics();
+                overlay.fillStyle(0x000000, 0.9);
+                overlay.fillRect(0, 0, width, height);
+                overlay.setScrollFactor(0);
+                overlay.setDepth(100);
+
+                this.add.text(width / 2, height * 0.3, 'GAME OVER', {
+                    fontFamily: 'Orbitron, monospace',
+                    fontSize: '36px',
+                    fill: '#ff0044',
+                    stroke: '#440000',
+                    strokeThickness: 4
+                }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+
+                this.add.text(width / 2, height * 0.45, `Wave: ${this.wave}\nKills: ${this.kills}\nLevel: ${this.level}`, {
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontSize: '22px',
+                    fill: '#ffffff',
+                    align: 'center',
+                    lineSpacing: 10
+                }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+
+                // Restart button
+                const restartBtn = this.add.container(width / 2, height * 0.7);
+                restartBtn.setScrollFactor(0);
+                restartBtn.setDepth(101);
+
+                const btnBg = this.add.graphics();
+                btnBg.fillStyle(0x00ffff, 0.2);
+                btnBg.fillRoundedRect(-80, -25, 160, 50, 8);
+                btnBg.lineStyle(2, 0x00ffff, 1);
+                btnBg.strokeRoundedRect(-80, -25, 160, 50, 8);
+                restartBtn.add(btnBg);
+
+                const btnText = this.add.text(0, 0, 'PLAY AGAIN', {
+                    fontFamily: 'Orbitron, monospace',
+                    fontSize: '18px',
+                    fill: '#00ffff'
+                }).setOrigin(0.5);
+                restartBtn.add(btnText);
+
+                restartBtn.setSize(160, 50);
+                restartBtn.setInteractive();
+
+                restartBtn.on('pointerdown', () => {
+                    this.scene.restart();
+                });
+            });
+        }
+
+        update(time, delta) {
+            if (!this.player || !this.player.active) return;
+
+            // Player movement
+            let vx = 0, vy = 0;
+
+            // Touch joystick
+            if (this.moveJoystick.isActive) {
+                vx = this.moveJoystick.vector.x * this.playerStats.speed;
+                vy = this.moveJoystick.vector.y * this.playerStats.speed;
+            }
+
+            // Keyboard fallback
+            if (this.cursors.left.isDown || this.wasd.A.isDown) vx = -this.playerStats.speed;
+            if (this.cursors.right.isDown || this.wasd.D.isDown) vx = this.playerStats.speed;
+            if (this.cursors.up.isDown || this.wasd.W.isDown) vy = -this.playerStats.speed;
+            if (this.cursors.down.isDown || this.wasd.S.isDown) vy = this.playerStats.speed;
+
+            // Normalize diagonal movement
+            if (vx !== 0 && vy !== 0) {
+                vx *= 0.707;
+                vy *= 0.707;
+            }
+
+            this.player.body.setVelocity(vx, vy);
+            this.playerGlow.setPosition(this.player.x, this.player.y);
+
+            // Shooting
+            if (this.isShooting) {
+                this.shootBullet();
+            }
+
+            // Auto-aim if not manually aiming (keyboard users)
+            if (!this.isShooting && (vx !== 0 || vy !== 0)) {
+                // Find nearest enemy
+                let nearest = null;
+                let nearestDist = Infinity;
+                
+                this.enemies.children.iterate((enemy) => {
+                    if (enemy && enemy.active) {
+                        const dist = Phaser.Math.Distance.Between(
+                            this.player.x, this.player.y,
+                            enemy.x, enemy.y
+                        );
+                        if (dist < nearestDist) {
+                            nearestDist = dist;
+                            nearest = enemy;
+                        }
+                    }
+                });
+
+                if (nearest && nearestDist < 400) {
+                    this.aimAngle = Phaser.Math.Angle.Between(
+                        this.player.x, this.player.y,
+                        nearest.x, nearest.y
+                    );
+                    this.shootBullet();
+                }
+            }
+
+            // Update enemies
+            this.enemies.children.iterate((enemy) => {
+                if (enemy && enemy.active) {
+                    // Move towards player
+                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                    enemy.body.setVelocity(
+                        Math.cos(angle) * enemy.speed,
+                        Math.sin(angle) * enemy.speed
+                    );
+
+                    // Shooter enemies fire
+                    if (enemy.enemyType === 'shooter') {
+                        const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                        if (dist < 300 && time - enemy.lastShot > 2000) {
+                            this.enemyShoot(enemy);
+                            enemy.lastShot = time;
+                        }
+                    }
+                }
+            });
+
+            // XP magnet effect
+            this.xpOrbs.children.iterate((xp) => {
+                if (xp && xp.active) {
+                    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, xp.x, xp.y);
+                    if (dist < this.playerStats.magnetRange) {
+                        const angle = Phaser.Math.Angle.Between(xp.x, xp.y, this.player.x, this.player.y);
+                        const speed = 300 * (1 - dist / this.playerStats.magnetRange);
+                        xp.body.setVelocity(
+                            Math.cos(angle) * speed,
+                            Math.sin(angle) * speed
+                        );
+                    }
+                }
+            });
+
+            // Update enemy count
+            if (this.waveActive) {
+                const activeEnemies = this.enemies.countActive();
+                this.enemyCountText.setText(`Enemies: ${activeEnemies}`);
+            } else {
+                this.enemyCountText.setText('');
+            }
+        }
+    }
+
+    // ============================================
+    // GAME CONFIGURATION
+    // ============================================
+    const config = {
+        type: Phaser.AUTO,
+        parent: 'game-container',
+        backgroundColor: '#0a0a15',
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: 390,
+            height: 844
+        },
+        physics: {
+            default: 'arcade',
+            arcade: {
+                debug: false
+            }
+        },
+        scene: [BootScene, MenuScene, GameScene],
+        input: {
+            activePointers: 3
+        },
+        render: {
+            pixelArt: false,
+            antialias: true
+        }
+    };
+
+    // Prevent default touch behaviors
+    document.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('gesturechange', (e) => e.preventDefault());
+
+    // Start game
+    const game = new Phaser.Game(config);
+
+    </script>
+</body>
+</html>
