@@ -247,7 +247,7 @@
         create() {
             const width = this.cameras.main.width;
             const height = this.cameras.main.height;
-
+            
             // Animated background grid
             this.createBackground();
 
@@ -393,6 +393,18 @@
             this.isShooting = false;
         }
 
+        handleResize(gameSize) {
+            const width = gameSize.width;
+            const height = gameSize.height;
+            
+            // Reposition joystick
+            this.moveJoystick.base.setPosition(90, height - 120);
+            this.moveJoystick.thumb.setPosition(90, height - 120);
+            
+            // Reposition UI elements
+            // ... update other fixed positions
+        }
+
         create() {
             const width = this.cameras.main.width;
             const height = this.cameras.main.height;
@@ -400,6 +412,8 @@
             // Set world bounds larger than screen for scrolling
             const worldSize = 1600;
             this.physics.world.setBounds(-worldSize/2, -worldSize/2, worldSize, worldSize);
+            
+            this.scale.on('resize', this.handleResize, this);
             
             // Create background
             this.createBackground(worldSize);
@@ -1386,10 +1400,9 @@
         parent: 'game-container',
         backgroundColor: '#0a0a15',
         scale: {
-            mode: Phaser.Scale.FIT,
-            autoCenter: Phaser.Scale.CENTER_BOTH,
-            width: 390,
-            height: 844
+            mode: Phaser.Scale.RESIZE,
+            width: '100%',
+            height: '100%'
         },
         physics: {
             default: 'arcade',
